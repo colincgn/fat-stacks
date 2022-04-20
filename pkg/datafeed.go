@@ -6,6 +6,7 @@ import (
 	"github.com/shopspring/decimal"
 	"nhooyr.io/websocket"
 	"nhooyr.io/websocket/wsjson"
+	"time"
 )
 
 type Side int
@@ -32,9 +33,14 @@ type DataFeed interface {
 }
 
 type aggTrade struct {
-	Symbol string `json:"s"`
-	Price  string `json:"p"`
-	Volume string `json:"q"`
+	Symbol    string `json:"s"`
+	Price     string `json:"p"`
+	Timestamp int64  `json:"T"`
+	Volume    string `json:"q"`
+}
+
+func (a aggTrade) String() string {
+	return fmt.Sprintf("%s - Price: %s, Volume: %s, Time: %s", a.Symbol, a.Price, a.Volume, time.UnixMilli(a.Timestamp).Format("15:04:05.00000"))
 }
 
 type WsDataFeed struct{}
@@ -54,7 +60,7 @@ func (ws WsDataFeed) Run(ctx context.Context) error {
 			fmt.Println("Error reading json:", err)
 			break
 		}
-		fmt.Printf("Message: %s\n", v)
+		fmt.Printf("%s\n", v)
 	}
 	return nil
 }
