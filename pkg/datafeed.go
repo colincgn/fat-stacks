@@ -3,6 +3,7 @@ package pkg
 import (
 	"context"
 	"fmt"
+	"github.com/rs/zerolog/log"
 	"github.com/shopspring/decimal"
 	"nhooyr.io/websocket"
 	"nhooyr.io/websocket/wsjson"
@@ -39,7 +40,11 @@ type TickData struct {
 }
 
 type DataFeed interface {
+	Connect(ctx context.Context) error
+	Subscribe(ctx context.Context, symbol string) error
 	Run(ctx context.Context) error
+	Listen() <-chan aggTrade
+	Stop()
 }
 
 type aggTrade struct {
@@ -60,24 +65,70 @@ func (a aggTrade) String() string {
 	return fmt.Sprintf("%s - Price: %s, Volume: %s, Time: %s, Buyer: %s", a.Symbol, a.Price, a.Volume, time.UnixMilli(a.Timestamp).Format("15:04:05.00000"), buyer)
 }
 
-type WsDataFeed struct{}
+type WsDataFeed struct {
+	c                 *websocket.Conn
+	subscriptionCount int
+	subscribedFeed    chan aggTrade
+}
 
-func (ws WsDataFeed) Run(ctx context.Context) error {
-	c, _, err := websocket.Dial(ctx, "wss://stream.binancefuture.com/ws/btcusdt@aggTrade", nil)
-	if err != nil {
-		fmt.Println("Error connecting to host", err)
-		return err
+func NewWsDataFeed() *WsDataFeed {
+	return &WsDataFeed{
+		subscriptionCount: 0,
+		subscribedFeed:    make(chan aggTrade, 100),
 	}
-	defer c.Close(websocket.StatusInternalError, "Unable to process message")
+}
 
-	var v aggTrade
+func (ws *WsDataFeed) Stop() {
+	log.Debug().Msg("Stop called in DataFeed, closing channel")
+	close(ws.subscribedFeed)
+}
+
+func (ws *WsDataFeed) Listen() <-chan aggTrade {
+	return ws.subscribedFeed
+}
+
+func (ws *WsDataFeed) Run(ctx context.Context) error {
+	var agg aggTrade
 	for {
-		err = wsjson.Read(ctx, c, &v)
+		err := wsjson.Read(ctx, ws.c, &agg)
 		if err != nil {
-			fmt.Println("Error reading json:", err)
+			if ctx.Err() == context.Canceled {
+				log.Debug().Msg("Websocket datafeed closed, shutting down reader.")
+			} else {
+				log.Error().Err(err).Msg("expected to be disconnected with a context cancel error but got")
+
+			}
 			break
 		}
-		fmt.Printf("%s\n", v)
+		ws.subscribedFeed <- agg
 	}
+	return nil
+}
+
+func (ws *WsDataFeed) Subscribe(ctx context.Context, symbol string) error {
+	ws.subscriptionCount += 1
+	subscription := fmt.Sprintf(`{"method": "SUBSCRIBE", "params":["%s@aggTrade"],"id":%d}`, symbol, ws.subscriptionCount)
+	err := ws.c.Write(ctx, websocket.MessageText, []byte(subscription))
+	if err != nil {
+		log.Error().Err(err).Msgf("failed to subscribe to symbol %s", symbol)
+		return err
+	}
+	_, msg, err := ws.c.Read(ctx)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to read from exchange")
+		return err
+	}
+	log.Info().Msgf("Successfully subscribed to channel: %s - %s\n", symbol, string(msg))
+	return nil
+}
+
+func (ws *WsDataFeed) Connect(ctx context.Context) error {
+	c, _, err := websocket.Dial(ctx, "wss://stream.binancefuture.com/ws/", nil)
+	//c, _, err := websocket.Dial(ctx, "wss://fstream.binance.com/ws/", nil)
+	if err != nil {
+		log.Error().Err(err).Msg("Error connecting to host")
+		return err
+	}
+	ws.c = c
 	return nil
 }

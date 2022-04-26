@@ -3,8 +3,9 @@ package cmd
 import (
 	"context"
 	"fat-stacks/pkg"
-	"fmt"
+	"fat-stacks/pkg/strategies"
 	"github.com/oklog/run"
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"os"
 	"os/signal"
@@ -21,13 +22,25 @@ var runCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 
 		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
 		var g run.Group
-		datafeed := pkg.WsDataFeed{}
+
+		datafeed := pkg.NewWsDataFeed()
+		datafeed.Connect(ctx)
+		datafeed.Subscribe(ctx, "btcusdt")
+		noop := strategies.New(datafeed)
 		{
 			g.Add(func() error {
 				return datafeed.Run(ctx)
 			}, func(error) {
-				cancel()
+				datafeed.Stop()
+			})
+		}
+		{
+			g.Add(func() error {
+				return noop.Run()
+			}, func(err error) {
+				log.Debug().Msg("Stopping strategy in run group, nothing to do here since it's stopped by a closing channel")
 			})
 		}
 		{
@@ -35,14 +48,15 @@ var runCmd = &cobra.Command{
 			signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM)
 			g.Add(func() error {
 				<-signalCh
-				fmt.Println("Shutting Down")
+				log.Debug().Msg("Shutting Down Signal received.  Preparing to exit")
+				cancel()
 				return nil
 			}, func(err error) {
 				close(signalCh)
 			})
 		}
 		g.Run()
-		fmt.Println("Shut down complete.  Exiting...")
+		log.Info().Msg("Shut down complete.")
 		return nil
 	},
 }
