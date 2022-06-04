@@ -31,7 +31,6 @@ func New(datafeed pkg.DataFeed) *NoOpStrategy {
 }
 
 func (no *NoOpStrategy) Run() error {
-
 	for msg := range no.datafeed.Listen() {
 		log.Info().Msgf("%s", msg)
 	}
