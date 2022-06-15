@@ -31,9 +31,18 @@ func New(datafeed pkg.DataFeed) *NoOpStrategy {
 }
 
 func (no *NoOpStrategy) Run() error {
-	for msg := range no.datafeed.Listen() {
-		log.Info().Msgf("%s", msg)
+	for {
+		select {
+		case tick, ok := <-no.datafeed.Listen():
+			if !ok {
+				return nil
+			}
+			log.Info().Msgf("%s", tick)
+		case hloc, ok := <-no.datafeed.ListenHLOC():
+			if !ok {
+				return nil
+			}
+			log.Info().Msgf("%s", hloc)
+		}
 	}
-	log.Debug().Msg("Stopping strategy, datafeed listening channel must have been closed.")
-	return nil
 }

@@ -1,6 +1,7 @@
 package pkg
 
 import (
+	"container/list"
 	"context"
 	"fmt"
 	"github.com/rs/zerolog/log"
@@ -45,6 +46,7 @@ type DataFeed interface {
 	Subscribe(ctx context.Context, symbol string) error
 	Run(ctx context.Context) error
 	Listen() <-chan TickData
+	ListenHLOC() <-chan HLOC
 	Stop()
 }
 
@@ -54,6 +56,19 @@ type aggTrade struct {
 	Timestamp int64  `json:"T"`
 	Volume    string `json:"q"`
 	IsSeller  bool   `json:"m"`
+}
+
+type CandleData struct {
+	Historical map[int64]list.List
+}
+
+type HLOC struct {
+	Open      decimal.Decimal
+	High      decimal.Decimal
+	Low       decimal.Decimal
+	Close     decimal.Decimal
+	OpenTime  int64
+	CloseTime int64
 }
 
 func (td TickData) String() string {
@@ -69,23 +84,29 @@ func (td TickData) String() string {
 type WsDataFeed struct {
 	c                 *websocket.Conn
 	subscriptionCount int
-	subscribedFeed    chan TickData
+	tickDataFeed      chan TickData
+	candlestickFeed   chan HLOC
 }
 
 func NewWsDataFeed() *WsDataFeed {
 	return &WsDataFeed{
 		subscriptionCount: 0,
-		subscribedFeed:    make(chan TickData, 10),
+		tickDataFeed:      make(chan TickData, 5),
+		candlestickFeed:   make(chan HLOC, 5),
 	}
 }
 
 func (ws *WsDataFeed) Stop() {
 	log.Debug().Msg("Stop called in DataFeed, closing channel")
-	close(ws.subscribedFeed)
+	close(ws.tickDataFeed)
 }
 
 func (ws *WsDataFeed) Listen() <-chan TickData {
-	return ws.subscribedFeed
+	return ws.tickDataFeed
+}
+
+func (ws *WsDataFeed) ListenHLOC() <-chan HLOC {
+	return ws.candlestickFeed
 }
 
 func (ws *WsDataFeed) Run(ctx context.Context) error {
@@ -102,16 +123,22 @@ func (ws *WsDataFeed) Run(ctx context.Context) error {
 			break
 		}
 
+		tick := generateTickEvent(agg)
 		select {
-		case ws.subscribedFeed <- getTickDataFromAggTrade(agg):
+		case ws.tickDataFeed <- tick:
 		default:
 			log.Warn().Msg("Failed to write to subscribed feed, dropping message")
+		}
+		select {
+		case ws.candlestickFeed <- generateHLOCEvent(tick):
+		default:
+			log.Warn().Msg("Failed to write to candlestick feed, dropping message")
 		}
 	}
 	return nil
 }
 
-func getTickDataFromAggTrade(agg aggTrade) TickData {
+func generateTickEvent(agg aggTrade) TickData {
 	price, _ := decimal.NewFromString(agg.Price)
 	volume, _ := decimal.NewFromString(agg.Volume)
 	return TickData{
@@ -121,6 +148,14 @@ func getTickDataFromAggTrade(agg aggTrade) TickData {
 		Time:    agg.Timestamp,
 		IsBuyer: !agg.IsSeller,
 	}
+}
+
+func generateHLOCEvent(tick TickData) HLOC {
+	return HLOC{}
+}
+
+func (cd CandleData) addTick(tick TickData) HLOC {
+
 }
 
 func (ws *WsDataFeed) Subscribe(ctx context.Context, symbol string) error {
