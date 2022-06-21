@@ -31,18 +31,22 @@ func New(datafeed pkg.DataFeed) *NoOpStrategy {
 }
 
 func (no *NoOpStrategy) Run() error {
-	for {
-		select {
-		case tick, ok := <-no.datafeed.Listen():
-			if !ok {
-				return nil
-			}
-			log.Info().Msgf("%s", tick)
-		case hloc, ok := <-no.datafeed.ListenHLOC():
-			if !ok {
-				return nil
-			}
-			log.Info().Msgf("%s", hloc)
-		}
+	for x := range no.datafeed.Listen() {
+		log.Info().Msgf("%v", x)
 	}
+	return nil
+	//for {
+	//	select {
+	//	case tick, ok := <-no.datafeed.Listen():
+	//		if !ok {
+	//			return nil
+	//		}
+	//		log.Info().Msgf("%s", tick)
+	//	case hloc, ok := <-no.datafeed.ListenHLOC():
+	//		if !ok {
+	//			return nil
+	//		}
+	//		log.Info().Msgf("%s", hloc)
+	//	}
+	//}
 }

@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fat-stacks/pkg"
+	tradingEngine "fat-stacks/pkg/engine"
 	"fat-stacks/pkg/strategies"
 	"github.com/oklog/run"
 	"github.com/rs/zerolog/log"
@@ -28,7 +29,9 @@ var runCmd = &cobra.Command{
 		datafeed := pkg.NewWsDataFeed()
 		datafeed.Connect(ctx)
 		datafeed.Subscribe(ctx, "btcusdt")
+		engine := tradingEngine.New()
 		noop := strategies.New(datafeed)
+		engine.Run()
 		{
 			g.Add(func() error {
 				return datafeed.Run(ctx)

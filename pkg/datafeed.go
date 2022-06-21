@@ -32,6 +32,9 @@ func (g GreenRed) String() string {
 	return [...]string{"Green", "Red"}[g]
 }
 
+type Engine struct {
+}
+
 type TickData struct {
 	Side    Side
 	Symbol  string
@@ -46,7 +49,6 @@ type DataFeed interface {
 	Subscribe(ctx context.Context, symbol string) error
 	Run(ctx context.Context) error
 	Listen() <-chan TickData
-	ListenHLOC() <-chan HLOC
 	Stop()
 }
 
@@ -92,7 +94,6 @@ func NewWsDataFeed() *WsDataFeed {
 	return &WsDataFeed{
 		subscriptionCount: 0,
 		tickDataFeed:      make(chan TickData, 5),
-		candlestickFeed:   make(chan HLOC, 5),
 	}
 }
 
@@ -129,11 +130,11 @@ func (ws *WsDataFeed) Run(ctx context.Context) error {
 		default:
 			log.Warn().Msg("Failed to write to subscribed feed, dropping message")
 		}
-		select {
-		case ws.candlestickFeed <- generateHLOCEvent(tick):
-		default:
-			log.Warn().Msg("Failed to write to candlestick feed, dropping message")
-		}
+		//select {
+		//case ws.candlestickFeed <- generateHLOCEvent(tick):
+		//default:
+		//	log.Warn().Msg("Failed to write to candlestick feed, dropping message")
+		//}
 	}
 	return nil
 }
@@ -152,10 +153,6 @@ func generateTickEvent(agg aggTrade) TickData {
 
 func generateHLOCEvent(tick TickData) HLOC {
 	return HLOC{}
-}
-
-func (cd CandleData) addTick(tick TickData) HLOC {
-
 }
 
 func (ws *WsDataFeed) Subscribe(ctx context.Context, symbol string) error {
